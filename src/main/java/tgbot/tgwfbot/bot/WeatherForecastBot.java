@@ -1,5 +1,9 @@
 package tgbot.tgwfbot.bot;
 
+import okhttp3.Callback;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsumer;
@@ -17,6 +21,8 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
+
+import java.io.IOException;
 
 @Component
 public class WeatherForecastBot implements LongPollingSingleThreadUpdateConsumer, SpringLongPollingBot {
@@ -42,24 +48,7 @@ public class WeatherForecastBot implements LongPollingSingleThreadUpdateConsumer
         if (update.hasMessage()) {
             message = update.getMessage();
         } else if (update.hasCallbackQuery()) {
-            CallbackQuery callbackQuery = update.getCallbackQuery();
-            String data = callbackQuery.getData();
-            Long chatId = callbackQuery.getMessage().getChatId();
-            Integer messageId = callbackQuery.getMessage().getMessageId();
-
-            String[] split = data.split("=");
-            if (split.length == 2) {
-                if ("province".equals(split[0])) {
-                    sendCityMenu(chatId, messageId);
-                } else if ("city".equals(split[0])) {
-                    sendCountyMenu(chatId, messageId);
-                } else if ("county".equals(split[0])) {
-                    // TODO query forecast
-                    System.out.println("County code => " + split[1]);
-                }
-            } else {
-                System.out.println("Unknown error...");
-            }
+            handleCallback(update);
             return;
         } else {
             return;
@@ -77,6 +66,44 @@ public class WeatherForecastBot implements LongPollingSingleThreadUpdateConsumer
             sendSimpleMessage(chatId, answerMessage);
         }
 
+    }
+
+    private void handleCallback(Update update) {
+        CallbackQuery callbackQuery = update.getCallbackQuery();
+        String data = callbackQuery.getData();
+        Long chatId = callbackQuery.getMessage().getChatId();
+        Integer messageId = callbackQuery.getMessage().getMessageId();
+
+        String[] split = data.split("=");
+        if (split.length == 2) {
+            if ("province".equals(split[0])) {
+                sendCityMenu(chatId, messageId);
+            } else if ("city".equals(split[0])) {
+                sendCountyMenu(chatId, messageId);
+            } else if ("county".equals(split[0])) {
+                // TODO query forecast
+                System.out.println("County code => " + split[1]);
+
+                String key = System.getenv("AMAP_KEY");
+                String urlString = "https://restapi.amap.com/v3/weather/weatherInfo?extensions=all"
+                        + "&city=" + split[1]
+                        + "&key=" + key;
+                OkHttpClient httpClient = new OkHttpClient();
+                Request request = new Request.Builder()
+                        .url(urlString)
+                        .build();
+                try {
+                    Response response = httpClient.newCall(request).execute();
+                    String responseString = response.body().string();
+                    System.out.println("Amap response => " + responseString);
+                    sendSimpleMessage(chatId, responseString);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        } else {
+            System.out.println("Unknown error...");
+        }
     }
 
     private void sendCountyMenu(Long chatId, Integer messageId) {
